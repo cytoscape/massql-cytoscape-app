@@ -1,0 +1,7 @@
+pluginManagement {
+    plugins {
+        id 'biz.aQute.bnd.builder' version '7.2.1'
+    }
+}
+
+rootProject.name = 'massql-cytoscape-app'

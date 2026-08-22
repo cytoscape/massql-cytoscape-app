@@ -1,0 +1,205 @@
+/*
+ * MassQL Cytoscape App — Gradle build
+ *
+ * Produces an OSGi bundle JAR installable as a Cytoscape 3 App. The MassQL SDK and its three
+ * runtime dependencies are embedded, because the Cytoscape OSGi runtime provides none of them.
+ * Cytoscape and OSGi APIs are compileOnly — the runtime supplies those.
+ */
+
+plugins {
+    id 'java'
+    id 'biz.aQute.bnd.builder'
+    id 'maven-publish'
+    id 'com.diffplug.spotless' version '6.25.0'
+    id 'jacoco'
+}
+
+group = 'org.cytoscape'
+version = project.findProperty('releaseVersion') ?: '0.1.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-Xlint:deprecation'
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://nrnb-nexus.ucsd.edu/repository/cytoscape_releases/' }
+    maven { url = 'https://nrnb-nexus.ucsd.edu/repository/cytoscape_thirdparty/' }
+}
+
+// Oldest 3.10.x, so the app installs on any 3.10 desktop.
+def cytoscapeVersion = '3.10.0'
+def massqlSdkVersion = '0.0.2'
+
+// 'embed' — physically bundled into the OSGi JAR; the Cytoscape runtime exports none of these.
+configurations {
+    embed
+    implementation.extendsFrom embed
+}
+
+dependencies {
+    compileOnly "org.cytoscape:model-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:service-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:work-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:work-swing-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:application-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:swing-application-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:swing-util-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:equations-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:event-api:${cytoscapeVersion}"
+    compileOnly "org.cytoscape:core-task-api:${cytoscapeVersion}"
+    compileOnly "org.osgi:org.osgi.core:6.0.0"
+    compileOnly "org.slf4j:slf4j-api:1.7.36"
+
+    embed "org.cytoscape:massql-java:${massqlSdkVersion}"   // + gson, antlr4-runtime, javolution
+
+    // The SDK declares gson at runtime scope, so it reaches the bundle but not our compile
+    // classpath. ResultJsonCodec needs it directly; keep this in step with the SDK's own version.
+    embed "com.google.code.gson:gson:2.11.0"
+
+    testImplementation platform("org.junit:junit-bom:5.11.4")
+    testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+    testImplementation "org.mockito:mockito-core:4.11.0"
+
+    // SLF4J is compileOnly because Cytoscape supplies it through pax-logging; the tests run
+    // outside that container, and NetworkTestSupport wires classes that log during construction.
+    testRuntimeOnly "org.slf4j:slf4j-simple:1.7.36"
+
+    // Real CyTable/CyNetwork/Interpreter for the integration tier — no OSGi, no desktop.
+    testImplementation "org.cytoscape:model-impl:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:model-impl:${cytoscapeVersion}:tests"
+    testImplementation "org.cytoscape:equations-impl:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:event-api:${cytoscapeVersion}:tests"
+
+    testImplementation "org.cytoscape:model-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:service-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:work-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:work-swing-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:application-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:swing-application-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:swing-util-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:equations-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:event-api:${cytoscapeVersion}"
+    testImplementation "org.cytoscape:core-task-api:${cytoscapeVersion}"
+    testImplementation "org.osgi:org.osgi.core:6.0.0"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    dependsOn tasks.named('spotlessCheck')
+}
+
+jar {
+    archiveBaseName = 'massql-cytoscape-app'
+
+    from({
+        configurations.embed.collect { it.isDirectory() ? it : zipTree(it) }
+    }) {
+        // Felix in Cytoscape 3.10.x fails to resolve a bundle carrying multi-release classes.
+        exclude 'META-INF/versions/**'
+        exclude 'META-INF/MANIFEST.MF'
+        exclude 'META-INF/*.SF'
+        exclude 'META-INF/*.DSA'
+        exclude 'META-INF/*.RSA'
+        // Cytoscape provides SLF4J through pax-logging; embedding it silently discards our logs.
+        exclude 'org/slf4j/**'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    bundle {
+        classpath = sourceSets.main.output + sourceSets.main.compileClasspath
+
+        bnd '''\
+            Bundle-SymbolicName: org.cytoscape.massql.app
+            Bundle-Name: MassQL
+            Bundle-Description: Run MassQL queries against mass spectra and apply the results to the node table
+            Bundle-Activator: org.cytoscape.massql.app.CyActivator
+
+            Import-Package: *;resolution:=optional
+
+            # The SDK packages are physically embedded above. Naming them private stops BND, which
+            # sees them only on the classpath, from emitting them as Import-Package entries.
+            Private-Package: org.cytoscape.massql.app,org.cytoscape.massql.app.*,\\
+                             org.cytoscape.massql,org.cytoscape.massql.*
+
+            Require-Capability: osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=17))"
+        '''
+    }
+}
+
+// Tests: *IT is the integration tier, everything else the unit tier.
+test {
+    useJUnitPlatform()
+    exclude '**/*IT.class', '**/*IT$*.class'
+    testLogging { events 'passed', 'skipped', 'failed' }
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Integration tier — real CyNetwork/CyTable, headless.'
+    group = 'verification'
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include '**/*IT.class', '**/*IT$*.class'
+    testLogging { events 'passed', 'skipped', 'failed' }
+    afterSuite { desc, result ->
+        if (desc.parent == null && result.testCount == 0) {
+            throw new GradleException('integrationTest matched no tests -- the *IT filter is broken')
+        }
+    }
+}
+
+// Exercises the ASSEMBLED bundle, not the loose classes: 'META-INF/versions/**' is stripped above,
+// and only running against the real jar proves nothing gson or ANTLR needs went with it.
+tasks.register('bundleSmokeTest', Test) {
+    description = 'Runs a real MassQL query with the built bundle jar on the classpath.'
+    group = 'verification'
+    dependsOn tasks.named('jar')
+    useJUnitPlatform()
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = files(tasks.named('jar').flatMap { it.archiveFile }) +
+            sourceSets.test.output +
+            configurations.testRuntimeClasspath
+    include '**/BundleSmokeIT.class'
+    testLogging { events 'passed', 'skipped', 'failed' }
+    afterSuite { desc, result ->
+        if (desc.parent == null && result.testCount == 0) {
+            throw new GradleException('bundleSmokeTest matched no tests -- BundleSmokeIT was renamed')
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('integrationTest'), tasks.named('bundleSmokeTest')
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) { from components.java }
+    }
+}
+
+spotless {
+    java {
+        googleJavaFormat('1.17.0').aosp()
+        importOrder('java', 'javax', 'org', 'com', 'org.cytoscape', '\\#')
+        removeUnusedImports()
+    }
+}
+
+jacoco {
+    toolVersion = '0.8.11'
+}
+
+jacocoTestReport {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}

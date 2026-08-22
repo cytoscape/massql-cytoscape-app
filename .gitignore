@@ -1,0 +1,14 @@
+.DS_Store
+.project
+.settings/
+.classpath
+bin/
+.vscode
+.claude
+
+# Gradle
+.gradle
+build
+
+# Kotlin plugin data
+.kotlin
