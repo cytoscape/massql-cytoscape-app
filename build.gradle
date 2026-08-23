@@ -27,9 +27,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 repositories {
-    // The ordering fix is unreleased; the app tracks it locally via `make publish-local` in
-    // ../massql-java. Drop this and pin the released version once 0.0.3 is cut.
-    mavenLocal()
     mavenCentral()
     maven { url = 'https://nrnb-nexus.ucsd.edu/repository/cytoscape_releases/' }
     maven { url = 'https://nrnb-nexus.ucsd.edu/repository/cytoscape_thirdparty/' }
@@ -37,7 +34,7 @@ repositories {
 
 // Oldest 3.10.x, so the app installs on any 3.10 desktop.
 def cytoscapeVersion = '3.10.0'
-def massqlSdkVersion = '0.0.3-SNAPSHOT'
+def massqlSdkVersion = '0.0.3'
 
 // 'embed' — physically bundled into the OSGi JAR; the Cytoscape runtime exports none of these.
 configurations {
