@@ -14,9 +14,13 @@ Implements [cytoscape/cytoscape#26](https://github.com/cytoscape/cytoscape/issue
 
 ## Installing
 
+Two options:
+
+### App Store
 Install **MassQL** from the [Cytoscape App Store](https://apps.cytoscape.org/).
 
-For a specific version, download its jar from
+### Direct download
+For a specific version, download the app jar from
 [Releases](https://github.com/cytoscape/massql-cytoscape-app/releases), then in Cytoscape choose
 **Apps ▸ App Store ▸ Install Apps From File**, select the jar, and restart if prompted.
 
