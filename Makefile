@@ -4,7 +4,7 @@
 GRADLE := ./gradlew --console=plain
 
 .DEFAULT_GOAL := help
-.PHONY: help all build test integration-test lint lint-fix coverage clean install install-app
+.PHONY: help all build release test integration-test lint lint-fix coverage clean install install-app
 
 ## help: list the targets (default)
 help:
@@ -20,6 +20,14 @@ all: integration-test
 ## build: compile and package the OSGi bundle jar
 build:
 	$(GRADLE) jar
+	@ls -1 build/libs/*.jar | sed 's|^|  -> |'
+
+## release: build the jar stamped with a real version, e.g. make release VERSION=0.0.1
+release: clean
+	@[ -n "$(VERSION)" ] || { echo "usage: make release VERSION=0.0.1" >&2; exit 2; }
+	@echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$' \
+	  || { echo "refusing '$(VERSION)': not plain semver X.Y.Z" >&2; exit 2; }
+	$(GRADLE) jar -PreleaseVersion=$(VERSION)
 	@ls -1 build/libs/*.jar | sed 's|^|  -> |'
 
 ## test: unit tier only. Seconds, for the edit loop.

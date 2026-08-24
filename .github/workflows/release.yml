@@ -1,0 +1,68 @@
+# Builds a version-stamped bundle jar and attaches it to the GitHub release.
+#
+# The tag is the source of truth for the version: `vX.Y.Z` releases massql-cytoscape-app X.Y.Z.
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      # A typo in the tag stops the release here rather than producing a jar with a bogus version.
+      - name: Extract and validate version from tag
+        id: rel
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          case "$TAG" in
+            v*) VERSION="${TAG#v}" ;;
+            *)
+              echo "Error: tag '$TAG' is not a release tag. Expected vX.Y.Z."
+              exit 1 ;;
+          esac
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Error: '$VERSION' is not valid semver (expected X.Y.Z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # Tests gate the release: an app that fails its own suite should not reach a user's Cytoscape.
+      - name: Test
+        run: make integration-test
+
+      - name: Build the release jar
+        run: make release VERSION=${{ steps.rel.outputs.version }}
+
+      # Cytoscape's App Manager reads Bundle-Version, so a stamp that silently failed would ship a
+      # SNAPSHOT jar under a release tag.
+      - name: Verify the jar carries the tagged version
+        run: |
+          ASSET="build/libs/massql-cytoscape-app-${{ steps.rel.outputs.version }}.jar"
+          test -f "$ASSET" || { echo "expected $ASSET"; ls -l build/libs; exit 1; }
+          STAMPED=$(unzip -p "$ASSET" META-INF/MANIFEST.MF | tr -d '\r' \
+            | awk -F': ' '/^Bundle-Version:/ {print $2}')
+          if [ "$STAMPED" != "${{ steps.rel.outputs.version }}" ]; then
+            echo "Error: Bundle-Version is '$STAMPED', tag says '${{ steps.rel.outputs.version }}'"
+            exit 1
+          fi
+          echo "Bundle-Version $STAMPED"
+
+      - name: Upload the jar to the release
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            "build/libs/massql-cytoscape-app-${{ steps.rel.outputs.version }}.jar" --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
