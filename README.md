@@ -14,8 +14,11 @@ Implements [cytoscape/cytoscape#26](https://github.com/cytoscape/cytoscape/issue
 
 ## Installing
 
-Drop the jar into `~/CytoscapeConfiguration/3/apps/installed/`. Cytoscape watches that directory
-and installs it without a restart. From a clone, `make install-app` does this for you.
+Install **MassQL** from the [Cytoscape App Store](https://apps.cytoscape.org/).
+
+For a specific version, download its jar from
+[Releases](https://github.com/cytoscape/massql-cytoscape-app/releases), then in Cytoscape choose
+**Apps ▸ App Store ▸ Install Apps From File**, select the jar, and restart if prompted.
 
 ---
 
