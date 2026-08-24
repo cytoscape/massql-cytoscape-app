@@ -5,7 +5,9 @@ import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.Window;
 import java.io.File;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.swing.AbstractAction;
 import javax.swing.BorderFactory;
@@ -50,6 +52,9 @@ public class RunMassqlDialog extends JDialog {
     private final JLabel toleranceNote = new JLabel();
     private final JLabel statusLabel = new JLabel(" ");
     private final JButton applyButton = new JButton("Apply");
+
+    private final transient Map<ResultAttribute, JCheckBox> attributeBoxes =
+            new EnumMap<>(ResultAttribute.class);
 
     private transient CyColumnComboBox scanColumnCombo;
     private transient MassqlRunRequest request;
@@ -153,11 +158,15 @@ public class RunMassqlDialog extends JDialog {
         JPanel attributes = new JPanel(new GridLayout(0, 3, 4, 0));
         for (ResultAttribute attribute : ResultAttribute.derivableAttributes()) {
             JCheckBox box = new JCheckBox(attribute.jsonName());
+            if (attribute.requiresMs1()) {
+                box.setToolTipText("Measured in an MS1 survey scan: choose an mzML or mzXML file.");
+            }
             box.addActionListener(
                     e -> {
                         form.setDerived(attribute, box.isSelected());
                         refresh();
                     });
+            attributeBoxes.put(attribute, box);
             attributes.add(box);
         }
         panel.add(attributes);
@@ -284,12 +293,23 @@ public class RunMassqlDialog extends JDialog {
     private void refresh() {
         readFields();
 
-        boolean toleranceApplies = form.precursorToleranceApplies();
-        toleranceField.setEnabled(toleranceApplies);
+        boolean ms1 = form.fileCarriesMs1();
+        toleranceField.setEnabled(ms1);
         toleranceNote.setText(
-                toleranceApplies
-                        ? " "
-                        : "An MGF carries no MS1 scans, so this has no effect on it.");
+                ms1 ? " " : "Applies to mzML and mzXML, which carry the MS1 survey scans.");
+
+        // The three MS1 attributes are offered only for a file that measures them. Clearing a box
+        // as it is disabled keeps the form honest: a tick made while an mzML was chosen must not
+        // follow the user to an MGF.
+        for (Map.Entry<ResultAttribute, JCheckBox> entry : attributeBoxes.entrySet()) {
+            boolean applies = form.applies(entry.getKey());
+            JCheckBox box = entry.getValue();
+            box.setEnabled(applies);
+            if (!applies && box.isSelected()) {
+                box.setSelected(false);
+                form.setDerived(entry.getKey(), false);
+            }
+        }
 
         String problem = form.whyNotReady();
         applyButton.setEnabled(problem == null);

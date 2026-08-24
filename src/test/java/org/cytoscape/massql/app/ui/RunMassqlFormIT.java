@@ -174,14 +174,53 @@ class RunMassqlFormIT {
     }
 
     @Test
-    void theToleranceIsInertForAnMgfAndLiveForAnMzml() {
+    void onlyMzmlAndMzxmlCarryMs1() {
         RunMassqlForm form = validForm();
 
         form.setFile(MGF);
-        assertFalse(form.precursorToleranceApplies(), "an MGF carries no MS1 scans");
+        assertFalse(form.fileCarriesMs1());
 
         form.setFile(MZML);
-        assertTrue(form.precursorToleranceApplies());
+        assertTrue(form.fileCarriesMs1());
+    }
+
+    @Test
+    void theMs1AttributesAreOfferedOnlyForAFileThatMeasuresThem() {
+        RunMassqlForm form = validForm();
+
+        form.setFile(MZML);
+        assertTrue(form.applies(ResultAttribute.MS1_I));
+        assertTrue(form.applies(ResultAttribute.BASE_PEAK_I));
+
+        form.setFile(MGF);
+        assertFalse(form.applies(ResultAttribute.MS1_I), "an MGF measures no precursor intensity");
+        assertFalse(form.applies(ResultAttribute.MS1_PRECMZ));
+        assertFalse(form.applies(ResultAttribute.MS1_BASE_PEAK_I));
+        assertTrue(form.applies(ResultAttribute.BASE_PEAK_I), "fragment values still apply");
+    }
+
+    /** Otherwise the run would write a column of blanks under a name promising measurements. */
+    @Test
+    void anMs1AttributeTickedForAnMzmlDoesNotFollowTheUserToAnMgf() {
+        RunMassqlForm form = validForm();
+        form.setFile(MZML);
+        form.setDerived(ResultAttribute.MS1_I, true);
+        form.setDerived(ResultAttribute.TIC, true);
+
+        form.setFile(MGF);
+
+        assertEquals(List.of(ResultAttribute.TIC), form.toRequest().deriveAttributes());
+    }
+
+    @Test
+    void anMgfWithOnlyMs1AttributesTickedCannotBeApplied() {
+        RunMassqlForm form = validForm();
+        form.setFile(MGF);
+        form.setCreateResultColumn(false);
+        form.setDerived(ResultAttribute.MS1_I, true);
+
+        assertFalse(form.isReady());
+        assertTrue(form.whyNotReady().contains("at least one column"), form.whyNotReady());
     }
 
     @Test

@@ -74,14 +74,22 @@ public final class RunMassqlForm {
     }
 
     /**
-     * Whether the precursor tolerance has any effect. It governs the MS1 survey-scan lookup, and an
-     * MGF carries only fragmentation spectra, so for one the field is inert.
+     * Whether the chosen file carries MS1 survey scans. mzML and mzXML do; an MGF holds
+     * fragmentation spectra alone.
+     *
+     * <p>Governs both the precursor tolerance, which is an MS1 lookup window, and the three
+     * attributes measured in an MS1 scan.
      *
      * <p>Decided on the file name: the engine identifies a format by reading it, but exposes no way
-     * to ask, and this only drives whether a field is greyed out.
+     * to ask, and this only drives which controls are offered.
      */
-    public boolean precursorToleranceApplies() {
+    public boolean fileCarriesMs1() {
         return file == null || !file.getName().toLowerCase(Locale.ROOT).endsWith(".mgf");
+    }
+
+    /** Whether {@code attribute} can be derived from the chosen file. */
+    public boolean applies(ResultAttribute attribute) {
+        return fileCarriesMs1() || !attribute.requiresMs1();
     }
 
     /** Why Apply is disabled, or null when it is allowed. */
@@ -106,7 +114,7 @@ public final class RunMassqlForm {
                     ? "This network has no column that could hold a scan number."
                     : "Choose the node column that holds each node's scan number.";
         }
-        if (!createResultColumn && deriveAttributes.isEmpty()) {
+        if (!createResultColumn && deriveAttributes.stream().noneMatch(this::applies)) {
             return "Choose at least one column to add.";
         }
         return null;
@@ -124,10 +132,8 @@ public final class RunMassqlForm {
                 queryName.trim(),
                 scanColumn,
                 createResultColumn,
-                List.copyOf(deriveAttributes),
-                precursorToleranceApplies()
-                        ? precursorTolPpm
-                        : MassqlOptions.DEFAULT_PRECURSOR_TOL_PPM,
+                deriveAttributes.stream().filter(this::applies).toList(),
+                fileCarriesMs1() ? precursorTolPpm : MassqlOptions.DEFAULT_PRECURSOR_TOL_PPM,
                 network);
     }
 

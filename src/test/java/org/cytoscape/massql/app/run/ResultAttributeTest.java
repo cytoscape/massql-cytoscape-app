@@ -63,6 +63,24 @@ class ResultAttributeTest {
     }
 
     @Test
+    void onlyTheSurveyScanMeasurementsNeedMs1() {
+        List<String> needMs1 =
+                java.util.stream.Stream.of(ResultAttribute.values())
+                        .filter(ResultAttribute::requiresMs1)
+                        .map(ResultAttribute::jsonName)
+                        .toList();
+
+        assertEquals(List.of("ms1scan", "ms1_i", "ms1_precmz", "ms1_base_peak_i"), needMs1);
+    }
+
+    @Test
+    void theMs2MeasurementsAreAvailableFromAnyFormat() {
+        for (String name : List.of("precmz", "rt", "tic", "base_peak_i", "base_peak_mz")) {
+            assertTrue(!ResultAttribute.byJsonName(name).requiresMs1(), name + " needs MS1");
+        }
+    }
+
+    @Test
     void anUnknownNameHasNoAttribute() {
         assertNull(ResultAttribute.byJsonName("base_peak"));
     }

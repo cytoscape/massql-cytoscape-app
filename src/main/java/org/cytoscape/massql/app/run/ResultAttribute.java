@@ -13,27 +13,32 @@ import org.cytoscape.massql.result.ScanInfoResult;
  * the run writes, and {@code MASSQL_PARSE}'s validation of an attribute name.
  */
 public enum ResultAttribute {
-    SCAN("scan", false, r -> widen(r.scan())),
-    PRECMZ("precmz", true, ScanInfoResult::precmz),
-    MS1SCAN("ms1scan", false, r -> widen(r.ms1scan())),
-    RT("rt", true, ScanInfoResult::rt),
-    CHARGE("charge", false, r -> widen(r.charge())),
-    TIC("tic", true, ScanInfoResult::tic),
-    MSLEVEL("mslevel", false, r -> widen(r.mslevel())),
-    BASE_PEAK_I("base_peak_i", true, ScanInfoResult::basePeakI),
-    BASE_PEAK_MZ("base_peak_mz", true, ScanInfoResult::basePeakMz),
-    MS1_I("ms1_i", true, ScanInfoResult::ms1I),
-    MS1_PRECMZ("ms1_precmz", true, ScanInfoResult::ms1Precmz),
-    MS1_BASE_PEAK_I("ms1_base_peak_i", true, ScanInfoResult::ms1BasePeakI);
+    SCAN("scan", false, false, r -> widen(r.scan())),
+    PRECMZ("precmz", true, false, ScanInfoResult::precmz),
+    MS1SCAN("ms1scan", false, true, r -> widen(r.ms1scan())),
+    RT("rt", true, false, ScanInfoResult::rt),
+    CHARGE("charge", false, false, r -> widen(r.charge())),
+    TIC("tic", true, false, ScanInfoResult::tic),
+    MSLEVEL("mslevel", false, false, r -> widen(r.mslevel())),
+    BASE_PEAK_I("base_peak_i", true, false, ScanInfoResult::basePeakI),
+    BASE_PEAK_MZ("base_peak_mz", true, false, ScanInfoResult::basePeakMz),
+    MS1_I("ms1_i", true, true, ScanInfoResult::ms1I),
+    MS1_PRECMZ("ms1_precmz", true, true, ScanInfoResult::ms1Precmz),
+    MS1_BASE_PEAK_I("ms1_base_peak_i", true, true, ScanInfoResult::ms1BasePeakI);
 
     private final String jsonName;
     private final boolean derivable;
+    private final boolean requiresMs1;
     private final Function<ScanInfoResult, Double> extractor;
 
     ResultAttribute(
-            String jsonName, boolean derivable, Function<ScanInfoResult, Double> extractor) {
+            String jsonName,
+            boolean derivable,
+            boolean requiresMs1,
+            Function<ScanInfoResult, Double> extractor) {
         this.jsonName = jsonName;
         this.derivable = derivable;
+        this.requiresMs1 = requiresMs1;
         this.extractor = extractor;
     }
 
@@ -50,6 +55,14 @@ public enum ResultAttribute {
      */
     public boolean derivable() {
         return derivable;
+    }
+
+    /**
+     * Whether this value is measured in an MS1 survey scan, and so is reported for the formats that
+     * carry one -- {@code .mzML} and {@code .mzXML}.
+     */
+    public boolean requiresMs1() {
+        return requiresMs1;
     }
 
     /** The value for a matched row, or null where the field is absent or not finite. */
