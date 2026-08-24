@@ -24,6 +24,13 @@ java {
     targetCompatibility = JavaVersion.VERSION_17
 }
 
+// Every task runs every time. Gradle's up-to-date checks and build cache are both off, so a build
+// never reports success on work it skipped -- compilation, linting and tests alike.
+tasks.configureEach {
+    outputs.upToDateWhen { false }
+    outputs.cacheIf { false }
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs << '-Xlint:deprecation'
 }
