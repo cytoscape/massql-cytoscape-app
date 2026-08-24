@@ -19,6 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     measured attributes as `Double` columns ready to bind to a visual style.
   - Adds `MASSQL_PARSE(massql_result, attribute)` to the Formula Builder, for deriving values from
     the JSON column.
-  - Scriptable as `massql run` from the Automation panel, CyREST and py4cytoscape.
+  - Publishes `massql run` to the Automation panel.
   - Built on [massql-java](https://github.com/cytoscape/massql-java) 0.0.3.
 
