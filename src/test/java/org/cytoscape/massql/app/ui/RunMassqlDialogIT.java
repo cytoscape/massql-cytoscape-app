@@ -2,11 +2,17 @@ package org.cytoscape.massql.app.ui;
 
 import java.awt.GraphicsEnvironment;
 import java.io.File;
+import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+
+import javax.swing.SwingUtilities;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import org.cytoscape.application.swing.CyColumnPresentationManager;
 import org.cytoscape.massql.app.TestFixtures;
@@ -32,9 +38,35 @@ import static org.mockito.Mockito.when;
  * <p>Focus is asserted as the component the dialog <em>chose</em>. The AWT focus manager moves
  * focus only once a window is showing, and showing a modal dialog in a test would block.
  */
+@Timeout(30)
 class RunMassqlDialogIT {
 
     private static final String VALID_QUERY = "QUERY scaninfo(MS2DATA) WHERE MS2PROD=200.5";
+
+    /**
+     * Swing is single-threaded: building or driving a component off the event thread is undefined,
+     * and under a bare X server it deadlocks rather than merely misbehaving.
+     */
+    private static void onEdt(Runnable work) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            work.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(work);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("interrupted waiting for the event thread", e);
+        } catch (InvocationTargetException e) {
+            throw new AssertionError(e.getCause());
+        }
+    }
+
+    private static <T> T fromEdt(Supplier<T> read) {
+        AtomicReference<T> value = new AtomicReference<>();
+        onEdt(() -> value.set(read.get()));
+        return value.get();
+    }
 
     private final NetworkTestSupport support = new NetworkTestSupport();
     private CyNetwork network;
@@ -52,20 +84,23 @@ class RunMassqlDialogIT {
         when(registrar.getService(CyColumnPresentationManager.class))
                 .thenReturn(mock(CyColumnPresentationManager.class));
 
-        dialog = new RunMassqlDialog(null, new RunMassqlForm(network), registrar);
+        onEdt(() -> dialog = new RunMassqlDialog(null, new RunMassqlForm(network), registrar));
     }
 
     @AfterEach
     void tearDown() {
         if (dialog != null) {
-            dialog.dispose();
+            onEdt(dialog::dispose);
         }
     }
 
     private void fillIn(String path, String name, String query) {
-        dialog.fileField().setText(path);
-        dialog.nameField().setText(name);
-        dialog.queryArea().setText(query);
+        onEdt(
+                () -> {
+                    onEdt(() -> dialog.fileField().setText(path));
+                    onEdt(() -> dialog.nameField().setText(name));
+                    onEdt(() -> dialog.queryArea().setText(query));
+                });
     }
 
     private void completeForm() {
@@ -73,7 +108,7 @@ class RunMassqlDialogIT {
     }
 
     private void clickApply() {
-        dialog.applyButton().doClick();
+        onEdt(() -> dialog.applyButton().doClick());
     }
 
     private static boolean isBlank(String html) {
@@ -82,16 +117,17 @@ class RunMassqlDialogIT {
 
     @Test
     void applyIsOfferedOnlyOnceEveryFieldHasAValue() {
-        assertFalse(dialog.applyButton().isEnabled(), "nothing has been entered yet");
+        assertFalse(
+                fromEdt(() -> dialog.applyButton().isEnabled()), "nothing has been entered yet");
 
-        dialog.fileField().setText("/tmp/peaks.mgf");
-        assertFalse(dialog.applyButton().isEnabled());
+        onEdt(() -> dialog.fileField().setText("/tmp/peaks.mgf"));
+        assertFalse(fromEdt(() -> dialog.applyButton().isEnabled()));
 
-        dialog.nameField().setText("q");
-        assertFalse(dialog.applyButton().isEnabled());
+        onEdt(() -> dialog.nameField().setText("q"));
+        assertFalse(fromEdt(() -> dialog.applyButton().isEnabled()));
 
-        dialog.queryArea().setText(VALID_QUERY);
-        assertTrue(dialog.applyButton().isEnabled(), "every field now has a value");
+        onEdt(() -> dialog.queryArea().setText(VALID_QUERY));
+        assertTrue(fromEdt(() -> dialog.applyButton().isEnabled()), "every field now has a value");
     }
 
     /** Typing enables Apply directly; the user does not have to leave the field first. */
@@ -99,18 +135,19 @@ class RunMassqlDialogIT {
     void applyTurnsOnWhileTheFieldStillHasFocus() {
         fillIn("/tmp/peaks.mgf", "q", "");
 
-        dialog.queryArea().setText(VALID_QUERY);
+        onEdt(() -> dialog.queryArea().setText(VALID_QUERY));
 
-        assertTrue(dialog.applyButton().isEnabled());
+        assertTrue(fromEdt(() -> dialog.applyButton().isEnabled()));
     }
 
     @Test
     void theDialogSaysNothingWhileTheFormIsBeingFilledIn() {
-        assertTrue(isBlank(dialog.statusText()), dialog.statusText());
+        assertTrue(isBlank(fromEdt(dialog::statusText)), fromEdt(dialog::statusText));
 
         fillIn("/tmp/peaks.mgf", "q", VALID_QUERY);
 
-        assertTrue(isBlank(dialog.statusText()), "commentary belongs after Apply, not during");
+        assertTrue(
+                isBlank(fromEdt(dialog::statusText)), "commentary belongs after Apply, not during");
     }
 
     @Test
@@ -119,31 +156,31 @@ class RunMassqlDialogIT {
 
         clickApply();
 
-        assertFalse(isBlank(dialog.statusText()));
-        assertSame(dialog.fileField(), dialog.rejectedField());
-        assertNull(dialog.request(), "nothing was applied");
+        assertFalse(isBlank(fromEdt(dialog::statusText)));
+        assertSame(dialog.fileField(), fromEdt(dialog::rejectedField));
+        assertNull(fromEdt(dialog::request), "nothing was applied");
     }
 
     @Test
     void anIllegalQueryNameIsReportedAgainstTheNameField() {
         completeForm();
-        dialog.nameField().setText("has:colon");
+        onEdt(() -> dialog.nameField().setText("has:colon"));
 
         clickApply();
 
-        assertTrue(dialog.statusText().contains("':'"), dialog.statusText());
-        assertSame(dialog.nameField(), dialog.rejectedField());
+        assertTrue(fromEdt(dialog::statusText).contains("':'"), fromEdt(dialog::statusText));
+        assertSame(dialog.nameField(), fromEdt(dialog::rejectedField));
     }
 
     @Test
     void anUnparseableQueryIsReportedAgainstTheQueryArea() {
         completeForm();
-        dialog.queryArea().setText("QUERY scansum(MS2DATA) WHERE MS2PROD=300.0");
+        onEdt(() -> dialog.queryArea().setText("QUERY scansum(MS2DATA) WHERE MS2PROD=300.0"));
 
         clickApply();
 
-        assertTrue(dialog.statusText().contains("scansum"), dialog.statusText());
-        assertSame(dialog.queryArea(), dialog.rejectedField());
+        assertTrue(fromEdt(dialog::statusText).contains("scansum"), fromEdt(dialog::statusText));
+        assertSame(dialog.queryArea(), fromEdt(dialog::rejectedField));
     }
 
     @Test
@@ -152,9 +189,9 @@ class RunMassqlDialogIT {
 
         clickApply();
 
-        assertNotNull(dialog.request());
-        assertEquals("q", dialog.request().queryName());
-        assertTrue(isBlank(dialog.statusText()), "a clean run reports nothing");
+        assertNotNull(fromEdt(dialog::request));
+        assertEquals("q", fromEdt(dialog::request).queryName());
+        assertTrue(isBlank(fromEdt(dialog::statusText)), "a clean run reports nothing");
     }
 
     @Test
@@ -164,6 +201,6 @@ class RunMassqlDialogIT {
 
         clickApply();
 
-        assertEquals(mgf.toPath(), dialog.request().file());
+        assertEquals(mgf.toPath(), fromEdt(dialog::request).file());
     }
 }
