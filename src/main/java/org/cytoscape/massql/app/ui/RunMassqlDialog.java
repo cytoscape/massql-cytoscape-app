@@ -15,6 +15,7 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -57,6 +58,7 @@ public class RunMassqlDialog extends JDialog {
             new EnumMap<>(ResultAttribute.class);
 
     private transient CyColumnComboBox scanColumnCombo;
+    private transient JComponent rejectedField;
     private transient MassqlRunRequest request;
 
     public RunMassqlDialog(Window owner, RunMassqlForm form, CyServiceRegistrar registrar) {
@@ -122,10 +124,13 @@ public class RunMassqlDialog extends JDialog {
                 scanColumnCombo.setSelectedItem(column);
             }
         }
+        // The combo selects its first entry on its own. Adopting whatever it ended up showing keeps
+        // the form and the display from disagreeing about which column is chosen.
+        adoptSelectedScanColumn();
+
         scanColumnCombo.addActionListener(
                 e -> {
-                    CyColumn selected = scanColumnCombo.getSelectedItem();
-                    form.setScanColumn(selected == null ? null : selected.getName());
+                    adoptSelectedScanColumn();
                     refresh();
                 });
 
@@ -203,6 +208,11 @@ public class RunMassqlDialog extends JDialog {
         return footer;
     }
 
+    private void adoptSelectedScanColumn() {
+        CyColumn selected = scanColumnCombo.getSelectedItem();
+        form.setScanColumn(selected == null ? null : selected.getName());
+    }
+
     private void chooseFile() {
         FileUtil files = registrar.getService(FileUtil.class);
         File chosen =
@@ -219,34 +229,55 @@ public class RunMassqlDialog extends JDialog {
         }
     }
 
+    /**
+     * Values are judged here rather than as the user types: a half-typed query is not a mistake,
+     * and saying so on every keystroke reads as nagging.
+     */
     private void apply() {
         readFields();
-        if (!form.isReady()) {
+
+        RunMassqlForm.Problem problem = form.validate();
+        if (problem != null) {
+            report(problem.message(), fieldFor(problem.field()));
             return;
         }
-        // Parsing needs no file and costs nothing, so a bad query is caught here rather than
-        // after the peak list has been read.
+        // Parsing needs no file and costs nothing, so a bad query is caught here rather than after
+        // the peak list has been read.
         try {
             Massql.parse(form.queryText());
         } catch (MassqlParseException e) {
-            showQueryProblem(e);
+            report(describe(e), queryArea);
+            if (e.position() > 0 && e.position() <= queryArea.getText().length()) {
+                queryArea.setCaretPosition(e.position() - 1);
+            }
             return;
         }
         request = form.toRequest();
         dispose();
     }
 
-    private void showQueryProblem(MassqlParseException e) {
-        statusLabel.setText(
-                "<html>Query error"
-                        + (e.position() > 0 ? " at position " + e.position() : "")
-                        + ": "
-                        + e.getMessage()
-                        + "</html>");
-        queryArea.requestFocusInWindow();
-        if (e.position() > 0 && e.position() <= queryArea.getText().length()) {
-            queryArea.setCaretPosition(e.position() - 1);
+    private void report(String message, JComponent field) {
+        statusLabel.setText("<html>" + message + "</html>");
+        rejectedField = field;
+        if (field != null) {
+            field.requestFocusInWindow();
         }
+    }
+
+    private JComponent fieldFor(RunMassqlForm.Field field) {
+        return switch (field) {
+            case FILE -> fileField;
+            case QUERY_NAME -> nameField;
+            case QUERY_TEXT -> queryArea;
+            case COLUMNS -> null;
+        };
+    }
+
+    private static String describe(MassqlParseException e) {
+        return "Query error"
+                + (e.position() > 0 ? " at position " + e.position() : "")
+                + ": "
+                + e.getMessage();
     }
 
     private void readFields() {
@@ -296,7 +327,7 @@ public class RunMassqlDialog extends JDialog {
         boolean ms1 = form.fileCarriesMs1();
         toleranceField.setEnabled(ms1);
         toleranceNote.setText(
-                ms1 ? " " : "Applies to mzML and mzXML, which carry the MS1 survey scans.");
+                ms1 ? " " : "Applies only to mzML and mzXML, which carry the MS1 survey scans.");
 
         // The three MS1 attributes are offered only for a file that measures them. Clearing a box
         // as it is disabled keeps the form honest: a tick made while an mzML was chosen must not
@@ -311,9 +342,7 @@ public class RunMassqlDialog extends JDialog {
             }
         }
 
-        String problem = form.whyNotReady();
-        applyButton.setEnabled(problem == null);
-        statusLabel.setText(problem == null ? " " : problem);
+        applyButton.setEnabled(form.isComplete());
     }
 
     private static JPanel labelled(String label, java.awt.Component field) {
@@ -332,6 +361,33 @@ public class RunMassqlDialog extends JDialog {
                 body.run();
             }
         };
+    }
+
+    // Package-private seams for RunMassqlDialogIT, which drives these widgets as a user would.
+
+    JButton applyButton() {
+        return applyButton;
+    }
+
+    JTextField fileField() {
+        return fileField;
+    }
+
+    JTextField nameField() {
+        return nameField;
+    }
+
+    JTextArea queryArea() {
+        return queryArea;
+    }
+
+    String statusText() {
+        return statusLabel.getText();
+    }
+
+    /** The component the dialog pointed at when it last refused a value. */
+    JComponent rejectedField() {
+        return rejectedField;
     }
 
     @Override

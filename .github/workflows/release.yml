@@ -41,7 +41,7 @@ jobs:
 
       # Tests gate the release: an app that fails its own suite should not reach a user's Cytoscape.
       - name: Test
-        run: make integration-test
+        run: xvfb-run --auto-servernum make integration-test
 
       - name: Build the release jar
         run: make release VERSION=${{ steps.rel.outputs.version }}
