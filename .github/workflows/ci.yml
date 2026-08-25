@@ -10,6 +10,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A build that hangs should fail in minutes rather than occupy a runner for six hours.
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -28,7 +30,7 @@ jobs:
       # The dialog tests build real Swing components, which needs a display; without one they skip
       # themselves and the UI goes unverified.
       - name: Full suite
-        run: xvfb-run --auto-servernum make integration-test
+        run: xvfb-run make integration-test
 
       - name: Upload reports on failure
         if: failure()
