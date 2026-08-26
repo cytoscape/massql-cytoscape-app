@@ -174,16 +174,112 @@ class DerivedColumnsIT {
         assertNull(valueOf(node, "MASSQL::q_tic"), "a stale value is worse than an empty cell");
     }
 
-    /** Unchecking an attribute stops maintaining its column; removing it is the user's call. */
+    /**
+     * The case a whole-column check would miss: the second query still matches something, just not
+     * this node. Its cell has to be emptied rather than left holding the first query's answer under
+     * a column named for the second.
+     */
     @Test
-    void anAttributeDroppedOnARerunKeepsItsColumn() {
-        CyNode node = nodeWithScan(2);
+    void aRowThatMatchedTheFirstQueryIsClearedWhenTheSecondMissesIt() {
+        CyNode dropsOut = nodeWithScan(1);
+        CyNode staysMatched = nodeWithScan(2);
+
+        // Matches all three spectra, so both nodes get a value.
+        derive(List.of(ResultAttribute.TIC), true);
+        assertEquals(1750.0, valueOf(dropsOut, "MASSQL::q_tic"));
+        assertEquals(2600.0, valueOf(staysMatched, "MASSQL::q_tic"));
+
+        // Same query name, but now only scan 2 matches.
+        runner.run(
+                new MassqlRunRequest(
+                        TestFixtures.require("fixtures/micro/micro.mgf"),
+                        "QUERY scaninfo(MS2DATA) WHERE MS2PROD=300.0:TOLERANCEMZ=0.5",
+                        "q",
+                        "scan",
+                        true,
+                        List.of(ResultAttribute.TIC),
+                        20.0,
+                        network),
+                null,
+                () -> false);
+
+        assertNull(valueOf(dropsOut, "MASSQL::q_tic"), "scan 1 no longer matches");
+        assertEquals("", network.getRow(dropsOut).get("MASSQL::q", String.class));
+
+        assertEquals(2600.0, valueOf(staysMatched, "MASSQL::q_tic"), "scan 2 still does");
+        assertNotNull(network.getRow(staysMatched).get("MASSQL::q", String.class));
+    }
+
+    /**
+     * A re-run under the same query name leaves nothing describing the previous query. A column
+     * named for this query holding the last one's numbers is worse than no column: it reads as
+     * current.
+     */
+    @Test
+    void anAttributeDroppedOnARerunHasItsColumnRemoved() {
+        nodeWithScan(2);
 
         derive(List.of(ResultAttribute.TIC, ResultAttribute.BASE_PEAK_I));
+        assertNotNull(nodeTable.getColumn("MASSQL::q_base_peak_i"));
+
         derive(List.of(ResultAttribute.TIC));
 
-        assertNotNull(nodeTable.getColumn("MASSQL::q_base_peak_i"), "the column must survive");
-        assertEquals(1500.0, valueOf(node, "MASSQL::q_base_peak_i"), "with its values intact");
+        assertNull(nodeTable.getColumn("MASSQL::q_base_peak_i"), "the dropped column must go");
+        assertNotNull(nodeTable.getColumn("MASSQL::q_tic"), "the kept one stays");
+    }
+
+    @Test
+    void turningOffTheJsonColumnOnARerunRemovesIt() {
+        nodeWithScan(2);
+
+        derive(List.of(ResultAttribute.TIC), true);
+        assertNotNull(nodeTable.getColumn("MASSQL::q"));
+
+        derive(List.of(ResultAttribute.TIC), false);
+
+        assertNull(nodeTable.getColumn("MASSQL::q"));
+    }
+
+    /**
+     * The columns a run does write are reused rather than replaced, so a visual mapping bound to
+     * one survives the re-run. They carry nothing stale because every row is rewritten.
+     */
+    @Test
+    void aColumnThisRunStillWritesKeepsItsIdentity() {
+        nodeWithScan(2);
+
+        derive(List.of(ResultAttribute.TIC, ResultAttribute.BASE_PEAK_I));
+        CyColumn tic = nodeTable.getColumn("MASSQL::q_tic");
+
+        derive(List.of(ResultAttribute.TIC));
+
+        assertSame(tic, nodeTable.getColumn("MASSQL::q_tic"));
+    }
+
+    /** Ownership is matched exactly, so a query whose name merely starts the same is untouched. */
+    @Test
+    void aRerunLeavesAnotherQuerysColumnsAlone() {
+        nodeWithScan(2);
+
+        runner.run(
+                new MassqlRunRequest(
+                        TestFixtures.require("fixtures/micro/micro.mgf"),
+                        MATCHES_EVERY_SCAN,
+                        "qq",
+                        "scan",
+                        true,
+                        List.of(ResultAttribute.BASE_PEAK_I),
+                        20.0,
+                        network),
+                null,
+                () -> false);
+        derive(List.of(ResultAttribute.BASE_PEAK_I));
+
+        derive(List.of(ResultAttribute.TIC));
+
+        assertNull(nodeTable.getColumn("MASSQL::q_base_peak_i"), "this query's column went");
+        assertNotNull(nodeTable.getColumn("MASSQL::qq"), "the other query's did not");
+        assertNotNull(nodeTable.getColumn("MASSQL::qq_base_peak_i"));
     }
 
     @Test

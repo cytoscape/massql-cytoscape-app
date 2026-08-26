@@ -1,5 +1,10 @@
 package org.cytoscape.massql.app.run;
 
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.cytoscape.massql.MassqlException;
 import org.cytoscape.model.CyColumn;
 import org.cytoscape.model.CyTable;
@@ -21,6 +26,37 @@ public final class NodeColumns {
 
     public static String derivedColumn(String queryName, ResultAttribute attribute) {
         return resultColumn(queryName) + "_" + attribute.jsonName();
+    }
+
+    /**
+     * Removes columns from an earlier run of {@code queryName} that this run will not write, so a
+     * re-run leaves nothing behind describing the previous query.
+     *
+     * <p>Columns the run does write are left in place for {@link #ensure} to reuse: their every row
+     * is rewritten, so they carry nothing stale, and keeping the column keeps whatever visual
+     * mapping or equation the user has bound to it.
+     *
+     * <p>Ownership is matched exactly -- the result column itself, or one of its {@code _attribute}
+     * columns -- so re-running "a" leaves the columns of a query named "ab" alone.
+     */
+    public static void removeStaleColumns(CyTable table, String queryName, Set<String> keeping) {
+        String owned = resultColumn(queryName);
+        String prefix = owned + "_";
+        Set<String> kept = keeping.stream().map(NodeColumns::key).collect(Collectors.toSet());
+
+        for (CyColumn column : List.copyOf(table.getColumns())) {
+            String name = column.getName();
+            String key = key(name);
+            boolean ours = key.equals(key(owned)) || key.startsWith(key(prefix));
+            if (ours && !kept.contains(key) && !column.isImmutable()) {
+                table.deleteColumn(name);
+            }
+        }
+    }
+
+    /** Cytoscape matches column names without regard to case, so ownership has to as well. */
+    private static String key(String name) {
+        return name.toLowerCase(Locale.ROOT);
     }
 
     /**

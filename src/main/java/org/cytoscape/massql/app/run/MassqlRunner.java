@@ -3,8 +3,10 @@ package org.cytoscape.massql.app.run;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 import org.cytoscape.event.CyEventHelper;
@@ -90,6 +92,11 @@ public final class MassqlRunner {
             monitor.setStatusMessage("Writing " + matched + " matched nodes");
         }
 
+        // Anything this query name wrote last time that it will not write now describes a query
+        // the user has replaced, so it goes before a single cell is written.
+        NodeColumns.removeStaleColumns(
+                nodeTable, request.queryName(), columnsThisRunWrites(request));
+
         String resultColumn = null;
         if (request.createResultColumn()) {
             resultColumn = NodeColumns.resultColumn(request.queryName());
@@ -121,6 +128,18 @@ public final class MassqlRunner {
                 derived,
                 execution.diagnostics(),
                 false);
+    }
+
+    /** Every column name this request will write, result column and derived alike. */
+    private static Set<String> columnsThisRunWrites(MassqlRunRequest request) {
+        Set<String> names = new LinkedHashSet<>();
+        if (request.createResultColumn()) {
+            names.add(NodeColumns.resultColumn(request.queryName()));
+        }
+        for (ResultAttribute attribute : request.deriveAttributes()) {
+            names.add(NodeColumns.derivedColumn(request.queryName(), attribute));
+        }
+        return names;
     }
 
     /**
