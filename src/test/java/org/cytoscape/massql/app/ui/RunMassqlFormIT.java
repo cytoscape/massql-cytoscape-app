@@ -17,6 +17,7 @@ import org.cytoscape.model.NetworkTestSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -89,59 +90,104 @@ class RunMassqlFormIT {
     }
 
     /**
-     * Every node table already carries {@code name} and {@code shared name}, so preselecting "the
-     * first candidate" would quietly join on one of those -- a run that completes, writes a column,
-     * and matches nothing, with no clue as to why.
+     * The combo selects its first entry regardless, so the form has to hold the same thing. Leaving
+     * it unset showed the user a chosen column beside a message asking them to choose one.
      */
     @Test
-    void selectsNothingWhenNoColumnIsNamedScan() {
+    void fallsBackToTheFirstCandidateWhenNoneIsNamedScan() {
+        nodeTable.createColumn("cluster index", Integer.class, false);
+        RunMassqlForm form = new RunMassqlForm(network);
+
+        assertEquals(
+                RunMassqlForm.scanColumnCandidates(network).get(0).getName(), form.scanColumn());
+    }
+
+    @Test
+    void aColumnNamedScanIsPreferred() {
+        nodeTable.createColumn("scan", Integer.class, false);
+        RunMassqlForm form = new RunMassqlForm(network);
+
+        assertEquals("scan", form.scanColumn());
+    }
+
+    /** The bug this replaced: every field filled, yet Apply stayed disabled. */
+    @Test
+    void aScanColumnNotNamedScanStillCompletesTheForm() {
         nodeTable.createColumn("cluster index", Integer.class, false);
         RunMassqlForm form = new RunMassqlForm(network);
         form.setFile(MGF);
         form.setQueryName("q");
         form.setQueryText("QUERY scaninfo(MS2DATA)");
 
-        assertNull(form.scanColumn());
-        assertFalse(form.isReady());
-        assertTrue(form.whyNotReady().contains("Choose the node column"), form.whyNotReady());
-
-        form.setScanColumn("cluster index");
-        assertTrue(form.isReady(), "an explicit choice is all that was missing");
+        assertTrue(form.isComplete());
+        assertNull(form.validate());
     }
 
+    /**
+     * Cytoscape gives every node table {@code name} and {@code shared name} as text, so there is
+     * always something to offer even when the researcher added no identifier of their own -- and
+     * for a GNPS network those are exactly where the scan number lives.
+     */
     @Test
-    void aNetworkWithNoUsableColumnSaysSo() {
+    void theBuiltInTextColumnsAreAlwaysAvailable() {
         nodeTable.createColumn("mz", Double.class, false);
         RunMassqlForm form = new RunMassqlForm(network);
         form.setFile(MGF);
         form.setQueryName("q");
         form.setQueryText("QUERY scaninfo(MS2DATA)");
 
-        assertNull(form.scanColumn());
-        assertFalse(form.isReady());
-        assertTrue(form.whyNotReady().contains("scan number"), form.whyNotReady());
+        List<String> offered = names(RunMassqlForm.scanColumnCandidates(network));
+        assertTrue(offered.contains("shared name"), offered.toString());
+        assertFalse(offered.contains("mz"));
+
+        assertNotNull(form.scanColumn());
+        assertTrue(form.isComplete());
     }
 
     @Test
-    void aCompleteFormIsReady() {
+    void aFormWithEveryFieldSetIsComplete() {
         RunMassqlForm form = validForm();
 
-        assertNull(form.whyNotReady());
-        assertTrue(form.isReady());
+        assertTrue(form.isComplete());
+        assertNull(form.validate());
     }
 
     @Test
     void everyMissingFieldExplainsItself() {
         RunMassqlForm blank = new RunMassqlForm(network);
-        assertTrue(blank.whyNotReady().contains("peak list"), blank.whyNotReady());
+        assertEquals(RunMassqlForm.Field.FILE, blank.validate().field());
 
         RunMassqlForm noName = validForm();
         noName.setQueryName("  ");
-        assertTrue(noName.whyNotReady().contains("Name the query"), noName.whyNotReady());
+        assertEquals(RunMassqlForm.Field.QUERY_NAME, noName.validate().field());
 
         RunMassqlForm noQuery = validForm();
         noQuery.setQueryText("");
-        assertTrue(noQuery.whyNotReady().contains("MassQL query"), noQuery.whyNotReady());
+        assertEquals(RunMassqlForm.Field.QUERY_TEXT, noQuery.validate().field());
+    }
+
+    /**
+     * Apply turns on the moment every field has a value, without waiting for focus to leave one.
+     * Judging the values happens later, when the user says they are finished.
+     */
+    @Test
+    void completenessAndValidityAreSeparateQuestions() {
+        RunMassqlForm form = validForm();
+        form.setFile(new File("no-such-peaks.mgf"));
+
+        assertTrue(form.isComplete(), "every field has a value");
+        assertEquals(RunMassqlForm.Field.FILE, form.validate().field(), "but one is unusable");
+    }
+
+    @Test
+    void anIncompleteFormOffersNoApply() {
+        RunMassqlForm form = validForm();
+
+        form.setQueryText("");
+        assertFalse(form.isComplete());
+
+        form.setQueryText("QUERY scaninfo(MS2DATA)");
+        assertTrue(form.isComplete());
     }
 
     @Test
@@ -149,8 +195,8 @@ class RunMassqlFormIT {
         RunMassqlForm form = validForm();
         form.setFile(new File("no-such-peaks.mgf"));
 
-        assertFalse(form.isReady());
-        assertTrue(form.whyNotReady().contains("does not exist"), form.whyNotReady());
+        assertTrue(form.isComplete(), "a path was entered, so Apply is offered");
+        assertEquals(RunMassqlForm.Field.FILE, form.validate().field());
     }
 
     @Test
@@ -158,19 +204,21 @@ class RunMassqlFormIT {
         RunMassqlForm form = validForm();
         form.setQueryName("MASSQL::x");
 
-        assertTrue(form.whyNotReady().contains("':'"), form.whyNotReady());
+        RunMassqlForm.Problem problem = form.validate();
+        assertEquals(RunMassqlForm.Field.QUERY_NAME, problem.field());
+        assertTrue(problem.message().contains("':'"), problem.message());
     }
 
     @Test
-    void unselectingEverythingBlocksApply() {
+    void unselectingEveryColumnLeavesTheFormIncomplete() {
         RunMassqlForm form = validForm();
         form.setCreateResultColumn(false);
 
-        assertFalse(form.isReady());
-        assertTrue(form.whyNotReady().contains("at least one column"), form.whyNotReady());
+        assertFalse(form.isComplete());
+        assertEquals(RunMassqlForm.Field.COLUMNS, form.validate().field());
 
         form.setDerived(ResultAttribute.BASE_PEAK_I, true);
-        assertTrue(form.isReady(), "one attribute is enough on its own");
+        assertTrue(form.isComplete(), "one attribute is enough on its own");
     }
 
     @Test
@@ -219,8 +267,8 @@ class RunMassqlFormIT {
         form.setCreateResultColumn(false);
         form.setDerived(ResultAttribute.MS1_I, true);
 
-        assertFalse(form.isReady());
-        assertTrue(form.whyNotReady().contains("at least one column"), form.whyNotReady());
+        assertFalse(form.isComplete());
+        assertEquals(RunMassqlForm.Field.COLUMNS, form.validate().field());
     }
 
     @Test

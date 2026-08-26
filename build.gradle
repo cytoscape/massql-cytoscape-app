@@ -17,7 +17,7 @@ plugins {
 group = 'org.cytoscape'
 // The tree carries the version being worked toward, as a SNAPSHOT; a release build stamps the real
 // one via -PreleaseVersion, which `make release` passes.
-version = project.findProperty('releaseVersion') ?: '0.0.1-SNAPSHOT'
+version = project.findProperty('releaseVersion') ?: '0.0.2-SNAPSHOT'
 
 java {
     sourceCompatibility = JavaVersion.VERSION_17

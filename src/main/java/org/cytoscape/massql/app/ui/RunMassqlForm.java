@@ -57,20 +57,17 @@ public final class RunMassqlForm {
     }
 
     /**
-     * Preselects a column named "scan" -- the GNPS convention -- and otherwise selects nothing.
-     *
-     * <p>Deliberately not "the first candidate": every node table carries {@code name} and {@code
-     * shared name}, so a first-match default would silently land on one of those. That produces a
-     * run which completes, writes a column, and matches nothing, with no indication that the wrong
-     * key was joined on. Better to make the user say which column it is.
+     * Preselects a column named "scan" -- the GNPS convention -- and otherwise the first candidate,
+     * so the form always holds whatever the dialog is showing.
      */
     private static String defaultScanColumn(CyNetwork network) {
-        for (CyColumn column : scanColumnCandidates(network)) {
+        List<CyColumn> candidates = scanColumnCandidates(network);
+        for (CyColumn column : candidates) {
             if ("scan".equalsIgnoreCase(column.getNameOnly())) {
                 return column.getName();
             }
         }
-        return null;
+        return candidates.isEmpty() ? null : candidates.get(0).getName();
     }
 
     /**
@@ -92,39 +89,56 @@ public final class RunMassqlForm {
         return fileCarriesMs1() || !attribute.requiresMs1();
     }
 
-    /** Why Apply is disabled, or null when it is allowed. */
-    public String whyNotReady() {
+    /** A field of the dialog, so a rejected value can be pointed at. */
+    public enum Field {
+        FILE,
+        QUERY_NAME,
+        QUERY_TEXT,
+        COLUMNS
+    }
+
+    /** Something the user has to put right, and where. */
+    public record Problem(Field field, String message) {}
+
+    /**
+     * Whether every required field has been given a value.
+     *
+     * <p>Drives Apply, so it asks only whether something is there -- checking that the file exists
+     * or that the name is legal belongs to {@link #validate()}, after the user has said they are
+     * finished.
+     */
+    public boolean isComplete() {
+        return file != null
+                && !queryName.isBlank()
+                && !queryText.isBlank()
+                && scanColumn != null
+                && (createResultColumn || deriveAttributes.stream().anyMatch(this::applies));
+    }
+
+    /** What is wrong with the values entered, or null when they are usable. */
+    public Problem validate() {
         if (file == null) {
-            return "Choose a peak list file.";
+            return new Problem(Field.FILE, "Choose a peak list file.");
         }
         if (!file.isFile()) {
-            return "That peak list file does not exist.";
+            return new Problem(Field.FILE, "No file at " + file.getPath());
         }
         if (queryName.isBlank()) {
-            return "Name the query -- it names the columns this run writes.";
+            return new Problem(Field.QUERY_NAME, "Name the query -- it names the columns written.");
         }
         if (queryName.contains(":")) {
-            return "The query name may not contain ':'.";
+            return new Problem(Field.QUERY_NAME, "The query name may not contain ':'.");
         }
         if (queryText.isBlank()) {
-            return "Enter a MassQL query.";
-        }
-        if (scanColumn == null) {
-            return scanColumnCandidates(network).isEmpty()
-                    ? "This network has no column that could hold a scan number."
-                    : "Choose the node column that holds each node's scan number.";
+            return new Problem(Field.QUERY_TEXT, "Enter a MassQL query.");
         }
         if (!createResultColumn && deriveAttributes.stream().noneMatch(this::applies)) {
-            return "Choose at least one column to add.";
+            return new Problem(Field.COLUMNS, "Choose at least one column to add.");
         }
         return null;
     }
 
-    public boolean isReady() {
-        return whyNotReady() == null;
-    }
-
-    /** The request these fields describe. Only meaningful once {@link #isReady()}. */
+    /** The request these fields describe. Meaningful once {@link #validate()} passes. */
     public MassqlRunRequest toRequest() {
         return new MassqlRunRequest(
                 file.toPath(),
