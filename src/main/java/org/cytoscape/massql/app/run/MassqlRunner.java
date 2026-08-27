@@ -119,6 +119,8 @@ public final class MassqlRunner {
             derived.add(name);
         }
 
+        writeQueryMarker(nodeTable, request.queryName(), hits);
+
         return new MassqlRunSummary(
                 rows.size(),
                 duplicates,
@@ -140,6 +142,61 @@ public final class MassqlRunner {
             names.add(NodeColumns.derivedColumn(request.queryName(), attribute));
         }
         return names;
+    }
+
+    /**
+     * Records this query's name against the nodes it matched, and takes it off the nodes it did
+     * not, so the column always answers which queries a node matches now.
+     *
+     * <p>Written separately from {@link #writeColumn} because the value of a cell depends on the
+     * cell: the new list is the old one plus or minus this name. Only rows that actually change are
+     * touched -- a query matching thirty scans in a twenty-thousand node network should write
+     * thirty rows.
+     */
+    private void writeQueryMarker(
+            CyTable table, String queryName, Map<CyRow, ScanInfoResult> hits) {
+
+        NodeColumns.ensureQueriesColumn(table);
+
+        CyEventHelper events = registrar.getService(CyEventHelper.class);
+        List<RowSetRecord> changed = new ArrayList<>();
+
+        events.silenceEventSource(table);
+        try {
+            for (Map.Entry<CyRow, ScanInfoResult> entry : hits.entrySet()) {
+                CyRow row = entry.getKey();
+                List<String> current = row.getList(NodeColumns.QUERIES_COLUMN, String.class);
+                List<String> updated = withQuery(current, queryName, entry.getValue() != null);
+                if (updated == null) {
+                    continue;
+                }
+                row.set(NodeColumns.QUERIES_COLUMN, updated);
+                changed.add(new RowSetRecord(row, NodeColumns.QUERIES_COLUMN, updated, updated));
+            }
+        } finally {
+            events.unsilenceEventSource(table);
+        }
+        events.fireEvent(new RowsSetEvent(table, changed));
+    }
+
+    /**
+     * The list this row should hold, or null when it already holds it.
+     *
+     * @param current what the row holds now, null when the cell has never been written
+     * @param matched whether this query matched the row
+     */
+    static List<String> withQuery(List<String> current, String queryName, boolean matched) {
+        List<String> names = current == null ? List.of() : current;
+        if (matched == names.contains(queryName)) {
+            return null;
+        }
+        List<String> updated = new ArrayList<>(names);
+        if (matched) {
+            updated.add(queryName);
+        } else {
+            updated.remove(queryName);
+        }
+        return updated;
     }
 
     /**

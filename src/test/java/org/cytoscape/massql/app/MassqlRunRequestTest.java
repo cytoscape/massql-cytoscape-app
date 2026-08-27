@@ -4,6 +4,8 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import org.cytoscape.massql.MassqlException;
 import org.cytoscape.massql.app.run.ResultAttribute;
@@ -41,6 +43,16 @@ class MassqlRunRequestTest {
         MassqlException e =
                 assertThrows(MassqlException.class, () -> of("MASSQL::x", true, List.of()));
         assertTrue(e.getMessage().contains("':'"), e.getMessage());
+    }
+
+    @ParameterizedTest(name = "[{0}]")
+    @ValueSource(strings = {"QUERIES", "queries", "Queries"})
+    void rejectsTheReservedQueryName(String queryName) {
+        MassqlException e =
+                assertThrows(MassqlException.class, () -> of(queryName, true, List.of()));
+
+        assertTrue(e.getMessage().contains("reserved"), e.getMessage());
+        assertTrue(e.getMessage().contains("MASSQL::QUERIES"), e.getMessage());
     }
 
     @Test

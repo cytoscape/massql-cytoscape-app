@@ -130,6 +130,13 @@ class MassqlRunCommandTest {
     }
 
     @Test
+    void theDocumentedAttributesExcludeTheMarkerColumn() {
+        assertTrue(
+                !MassqlCommandTask.derivableNames().contains("QUERIES"),
+                "MASSQL::QUERIES is a marker column, not a derivable attribute");
+    }
+
+    @Test
     void theCommandIsAddressableAsMassqlRun() {
         assertEquals("massql", MassqlRunCommand.NAMESPACE);
         assertEquals("run", MassqlRunCommand.NAME);

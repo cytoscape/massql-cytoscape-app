@@ -210,6 +210,16 @@ class RunMassqlFormIT {
     }
 
     @Test
+    void theReservedQueryNameIsRefused() {
+        RunMassqlForm form = validForm();
+        form.setQueryName("QUERIES");
+
+        RunMassqlForm.Problem problem = form.validate();
+        assertEquals(RunMassqlForm.Field.QUERY_NAME, problem.field());
+        assertTrue(problem.message().contains("reserved"), problem.message());
+    }
+
+    @Test
     void unselectingEveryColumnLeavesTheFormIncomplete() {
         RunMassqlForm form = validForm();
         form.setCreateResultColumn(false);
