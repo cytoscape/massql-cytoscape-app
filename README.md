@@ -105,6 +105,10 @@ on. This enables direct binding in continuous mapping styles. Eight measured att
 
 **An empty cell means no data.** A node the query did not match is left blank.
 
+**`MASSQL::QUERIES`** is written on every run: a list column naming the queries each node currently
+matches, so a node says which queries reached it without reading across every other column. `QUERIES`
+is reserved as a query name.
+
 ---
 
 ## Using the results

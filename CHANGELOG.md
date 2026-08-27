@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-08-27
+
+### Added
+
+- A `MASSQL::QUERIES` list column, written on every run, naming the queries each node currently
+  matches. A node now says which queries reached it, rather than that having to be worked out by
+  reading across every other MASSQL column. A query name appears once however many times it is run,
+  and a re-run that no longer reaches a node takes the name back off it. `QUERIES` is reserved as a
+  query name.
+
 ## [0.0.2] - 2026-08-25
 
 ### Fixed

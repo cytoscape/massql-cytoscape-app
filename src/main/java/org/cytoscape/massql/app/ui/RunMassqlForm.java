@@ -9,6 +9,7 @@ import java.util.Set;
 
 import org.cytoscape.massql.MassqlOptions;
 import org.cytoscape.massql.app.MassqlRunRequest;
+import org.cytoscape.massql.app.run.NodeColumns;
 import org.cytoscape.massql.app.run.ResultAttribute;
 import org.cytoscape.model.CyColumn;
 import org.cytoscape.model.CyNetwork;
@@ -128,6 +129,15 @@ public final class RunMassqlForm {
         }
         if (queryName.contains(":")) {
             return new Problem(Field.QUERY_NAME, "The query name may not contain ':'.");
+        }
+        if (NodeColumns.isReservedQueryName(queryName)) {
+            return new Problem(
+                    Field.QUERY_NAME,
+                    "'"
+                            + queryName.trim()
+                            + "' is reserved: "
+                            + NodeColumns.QUERIES_COLUMN
+                            + " lists the queries each node matches.");
         }
         if (queryText.isBlank()) {
             return new Problem(Field.QUERY_TEXT, "Enter a MassQL query.");

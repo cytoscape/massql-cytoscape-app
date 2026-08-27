@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.cytoscape.massql.MassqlException;
 import org.cytoscape.massql.MassqlOptions;
+import org.cytoscape.massql.app.run.NodeColumns;
 import org.cytoscape.massql.app.run.ResultAttribute;
 import org.cytoscape.model.CyNetwork;
 
@@ -42,6 +43,13 @@ public record MassqlRunRequest(
                 !queryName.contains(":"),
                 "the query name may not contain ':' -- it separates a column's namespace from its"
                         + " name");
+        require(
+                !NodeColumns.isReservedQueryName(queryName),
+                "'"
+                        + queryName
+                        + "' is reserved: "
+                        + NodeColumns.QUERIES_COLUMN
+                        + " lists the queries each node matches. Choose another name.");
         require(
                 precursorTolPpm > 0 && Double.isFinite(precursorTolPpm),
                 "the precursor tolerance must be a positive number of ppm");

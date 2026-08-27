@@ -18,7 +18,46 @@ public final class NodeColumns {
      */
     public static final String NAMESPACE = "MASSQL";
 
+    /**
+     * Names every query a node currently matches, so the queries a node took part in can be read
+     * from the node itself rather than by scanning every other MASSQL column.
+     */
+    public static final String QUERIES_COLUMN = NAMESPACE + "::QUERIES";
+
+    private static final String RESERVED_QUERY_NAME = "QUERIES";
+
     private NodeColumns() {}
+
+    /** Whether a query of this name would write over {@link #QUERIES_COLUMN}. */
+    public static boolean isReservedQueryName(String queryName) {
+        return RESERVED_QUERY_NAME.equalsIgnoreCase(queryName == null ? null : queryName.trim());
+    }
+
+    /**
+     * Returns the marker column, creating it if absent.
+     *
+     * <p>Created with no default value on purpose: a column's default list is one instance shared
+     * by every unwritten row, so a mutable default is corruptible by any caller and an immutable
+     * one refuses the appends this column exists for. An unwritten cell therefore reads back null,
+     * which callers treat as no names.
+     */
+    public static CyColumn ensureQueriesColumn(CyTable table) {
+        CyColumn existing = table.getColumn(QUERIES_COLUMN);
+        if (existing == null) {
+            table.createListColumn(QUERIES_COLUMN, String.class, false);
+            return table.getColumn(QUERIES_COLUMN);
+        }
+        if (existing.getType() != List.class || existing.getListElementType() != String.class) {
+            throw new MassqlException(
+                    "column '"
+                            + QUERIES_COLUMN
+                            + "' already exists as "
+                            + existing.getType().getSimpleName()
+                            + " and is not the list of query names this app maintains. Rename or"
+                            + " remove it.");
+        }
+        return existing;
+    }
 
     public static String resultColumn(String queryName) {
         return NAMESPACE + "::" + queryName;
@@ -47,7 +86,11 @@ public final class NodeColumns {
         for (CyColumn column : List.copyOf(table.getColumns())) {
             String name = column.getName();
             String key = key(name);
-            boolean ours = key.equals(key(owned)) || key.startsWith(key(prefix));
+            // The marker column belongs to no single query, and a reserved name keeps any query
+            // from claiming it -- but a column left by an earlier version is guarded here too.
+            boolean ours =
+                    !key.equals(key(QUERIES_COLUMN))
+                            && (key.equals(key(owned)) || key.startsWith(key(prefix)));
             if (ours && !kept.contains(key) && !column.isImmutable()) {
                 table.deleteColumn(name);
             }
